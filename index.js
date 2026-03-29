@@ -17,6 +17,46 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Bingsu backend running' });
 });
 
+// ─── Send WhatsApp message via Meta Cloud API ──────────────
+async function sendWhatsApp(phone, message) {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_ID;
+  if (!token || !phoneId) {
+    console.log('WhatsApp not configured, OTP:', message);
+    return false;
+  }
+  // Format phone: remove + and spaces
+  const to = phone.replace(/\D/g, '');
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v22.0/${phoneId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to,
+          type: 'text',
+          text: { body: message }
+        })
+      }
+    );
+    const data = await res.json();
+    if (data.error) {
+      console.error('WhatsApp error:', data.error);
+      return false;
+    }
+    console.log(`WhatsApp sent to ${phone}`);
+    return true;
+  } catch(e) {
+    console.error('WhatsApp fetch error:', e.message);
+    return false;
+  }
+}
+
 // ─── Send OTP ──────────────────────────────────────────────
 app.post('/auth/send-otp', async (req, res) => {
   const { phone } = req.body;
@@ -25,8 +65,13 @@ app.post('/auth/send-otp', async (req, res) => {
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   await supabase.from('otp_codes').delete().eq('phone', phone);
   await supabase.from('otp_codes').insert({ phone, code, expires_at });
-  console.log(`OTP for ${phone}: ${code}`);
-  // TODO: Send via CallMeBot/WATI when ready
+
+  const msg = `🍧 WEEEE Bingsu\n\nYour OTP verification code is:\n*${code}*\n\nValid for 10 minutes.\nDo not share this code with anyone.`;
+  const sent = await sendWhatsApp(phone, msg);
+
+  if (!sent) {
+    console.log(`OTP for ${phone}: ${code}`);
+  }
   res.json({ success: true, message: 'OTP sent' });
 });
 
